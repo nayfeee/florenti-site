@@ -150,7 +150,7 @@ export default function OfferBuilder({ offer, scents }: { offer: Offer; scents: 
       </div>
 
       <form id="details" onSubmit={submit} className="panel">
-        <h2 className="section" style={{ marginTop: 0 }}>Your box</h2>
+        <h2 className="section" style={{ marginTop: 0 }}>What's in your bag?</h2>
         {chosen.length === 0 ? <p className="muted">Nothing chosen yet. Pick your {bars} bars above.</p> : (
           <ul className="sum">{chosen.map((s) => <li key={s.scent_id}><span>{s.name}</span><span>× {qty[s.scent_id]}</span></li>)}</ul>
         )}
