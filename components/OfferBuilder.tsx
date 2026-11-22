@@ -170,7 +170,7 @@ export default function OfferBuilder({ offer, scents }: { offer: Offer; scents: 
         </div>
         {pcWarn && <p className="muted" role="status" style={{ marginTop: -6, fontSize: 14, color: "#f3d9a4" }}>{pcWarn}</p>}
         {offer.delivery_from && <p className="delivery">Delivery will be from {longDate(offer.delivery_from)}</p>}
-        <div className="field"><label htmlFor="o">Notes (optional)</label><textarea id="o" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={1000} placeholder="Anything we should know?" /></div>
+        <div className="field"><label htmlFor="o">Notes (safe place for delivery etc.)</label><textarea id="o" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={1000} placeholder="Anything we should know?" /></div>
         <div className="hp" aria-hidden="true"><label>Website<input type="text" tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} /></label></div>
         {error && <div className="notice err" role="alert">{error}</div>}
         <button className="btn primary" type="submit" disabled={!canSubmit} style={{ width: "100%" }}>{busy ? "Placing order…" : `Place order · ${pounds(offer.price_pence)}`}</button>
