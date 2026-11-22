@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: "Monthly snap bar offer | Florenti",
   description: "This month’s Florenti snap bar selection box. Choose your scents and order.",
   alternates: { canonical: "/monthly-offer" },
-  openGraph: { url: "/monthly-offer", title: "Florenti | Monthly snap bar offer", description: "Build your own box of snap bars from this month’s selection.", images: [{ url: "/og-image.jpg", width: 1200, height: 630 }] },
+  openGraph: { url: "/monthly-offer", title: "Florenti | Monthly snap bar offer", description: "Build your own bag of snap bars from this month’s selection.", images: [{ url: "/og-offer.jpg", width: 1200, height: 630 }] },
 };
 
 export default async function MonthlyOffer() {
