@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default async function MonthlyOffer() {
   const db = serverClient();
-  const { data: offers } = await db.from("public_offers").select("id,name,bars_per_box,price_pence").limit(1);
+  const { data: offers } = await db.from("public_offers").select("id,name,bars_per_box,price_pence,delivery_from").limit(1);
   const offer = offers?.[0];
   const scents = offer
     ? (await db.from("public_offer_scents").select("scent_id,name,inspired_by,description,tags,max_bars").eq("offer_id", offer.id)).data || []

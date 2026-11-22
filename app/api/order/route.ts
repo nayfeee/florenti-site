@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { serverClient } from "@/lib/supabase";
+import { longDate } from "@/lib/util";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,9 @@ function customerMessage(code: string, detail?: string): string {
     case "invalid_email": return "That email address doesn’t look right.";
     case "contact_required": return "Please give us an email address or a phone number.";
     case "invalid_phone": return "That phone number doesn’t look right.";
+    case "invalid_address": return "Please enter your house number and street.";
+    case "invalid_town": return "Please enter your town or city.";
+    case "invalid_postcode": return "That postcode doesn’t look right. Please check it.";
     case "notes_too_long": return "Your notes are a little too long. Please shorten them.";
     default: return "Something went wrong placing your order. Please try again, or message us on WhatsApp.";
   }
@@ -51,6 +55,7 @@ export async function POST(req: Request) {
 
   const { data, error } = await db.rpc("place_order", {
     p_offer_id: b.offerId, p_name: String(b.name ?? ""), p_email: String(b.email ?? ""), p_phone: String(b.phone ?? ""), p_notes: String(b.notes ?? ""), p_items: items,
+    p_address_line1: String(b.address1 ?? ""), p_address_line2: String(b.address2 ?? ""), p_town: String(b.town ?? ""), p_postcode: String(b.postcode ?? ""),
   });
   if (error || !data?.[0]) {
     const code = (error?.message || "").trim();
@@ -58,11 +63,13 @@ export async function POST(req: Request) {
   }
 
   const o = data[0];
+  const pcRaw = String(b.postcode ?? "").replace(/\s+/g, "").toUpperCase();
+  const pc = pcRaw.length > 3 ? `${pcRaw.slice(0, -3)} ${pcRaw.slice(-3)}` : pcRaw;
   const lines = items.map((i: any) => `${i.quantity} × ${names[i.scent_id] || i.scent_id}`);
   const name = String(b.name).trim(), email = String(b.email ?? "").trim(), phone = String(b.phone ?? "").trim(), notes = String(b.notes ?? "").trim();
-  const text = [`New order ${o.ref} (${gbp(o.total_pence)})`, "", ...lines, "", `Name: ${name}`, `Email: ${email || "-"}`, `Phone: ${phone || "-"}`, `Notes: ${notes || "-"}`, "", "Manage it in the admin page: /admin"].join("\n");
-  const html = `<div style="font-family:Arial,sans-serif;font-size:15px;color:#222"><h2 style="margin:0 0 8px">New order ${esc(o.ref)}</h2><p style="margin:0 0 14px">${gbp(o.total_pence)} · ${items.reduce((a: number, i: any) => a + i.quantity, 0)} snap bars</p><ul style="padding-left:18px">${lines.map((l: string) => `<li>${esc(l)}</li>`).join("")}</ul><p><b>${esc(name)}</b><br>Email: ${esc(email || "-")}<br>Phone: ${esc(phone || "-")}<br>Notes: ${esc(notes || "-")}</p><p style="color:#666">Stock has already been updated. Manage or cancel this order in the admin page.</p></div>`;
+  const text = [`New order ${o.ref} (${gbp(o.total_pence)})`, "", ...lines, "", `Name: ${name}`, `Email: ${email || "-"}`, `Phone: ${phone || "-"}`, `Notes: ${notes || "-"}`, "", "Deliver to:", String(b.address1).trim(), ...(String(b.address2 ?? "").trim() ? [String(b.address2).trim()] : []), String(b.town).trim(), pc, `Delivery from: ${o.delivery_from ? longDate(o.delivery_from) : "not set"}`, "", "Manage it in the admin page: /admin"].join("\n");
+  const html = `<div style="font-family:Arial,sans-serif;font-size:15px;color:#222"><h2 style="margin:0 0 8px">New order ${esc(o.ref)}</h2><p style="margin:0 0 14px">${gbp(o.total_pence)} · ${items.reduce((a: number, i: any) => a + i.quantity, 0)} snap bars</p><ul style="padding-left:18px">${lines.map((l: string) => `<li>${esc(l)}</li>`).join("")}</ul><p><b>${esc(name)}</b><br>Email: ${esc(email || "-")}<br>Phone: ${esc(phone || "-")}<br>Notes: ${esc(notes || "-")}</p><p><b>Deliver to</b><br>${[String(b.address1).trim(), String(b.address2 ?? "").trim(), String(b.town).trim(), pc].filter(Boolean).map(esc).join("<br>")}<br>Delivery from: ${esc(o.delivery_from ? longDate(o.delivery_from) : "not set")}</p><p style="color:#666">Stock has already been updated. Manage or cancel this order in the admin page.</p></div>`;
   await sendEmail(`New Florenti order ${o.ref}`, html, text, email || undefined);
 
-  return NextResponse.json({ ok: true, ref: o.ref, totalPence: o.total_pence });
+  return NextResponse.json({ ok: true, ref: o.ref, totalPence: o.total_pence, deliveryFrom: o.delivery_from ?? null });
 }

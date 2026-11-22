@@ -16,7 +16,7 @@ def check(name, cond, extra=""):
 
 def run_file(p):
     with psycopg.connect(URI, autocommit=True) as c: c.execute(open(p).read())
-for f in (os.path.join(HERE, "stub_supabase.sql"), os.path.join(SQL, "001_schema.sql"), os.path.join(SQL, "002_seed.sql"), os.path.join(SQL, "003_offer_admin.sql")): run_file(f)
+for f in (os.path.join(HERE, "stub_supabase.sql"), os.path.join(SQL, "001_schema.sql"), os.path.join(SQL, "002_seed.sql"), os.path.join(SQL, "003_offer_admin.sql"), os.path.join(SQL, "006_delivery.sql")): run_file(f)
 
 def sess(role=None, uid=None):
     c = psycopg.connect(URI)
@@ -45,9 +45,9 @@ def setstock(name, target):
     cur = su.execute("select stock_ml from scents where id=%s", [ids[name]]).fetchone()[0]
     if target != cur: attempt(admin, "select adjust_stock(%s,%s,'correction','test setup')", [ids[name], target - cur])
 for n, ml in zip(N, [100, 50, 10, 15, 5, 0, 700, 100]): setstock(n, ml)
-def order(items, name="Test Customer", email="t@example.com", phone="", notes="", conn=None):
+def order(items, name="Test Customer", email="t@example.com", phone="", notes="", conn=None, a1="39 Rodney Drive", a2="", town="Stockport", pc="sk4 1ab"):
     js = Jsonb(items) if not isinstance(items, str) else items
-    return attempt(conn or anon, "select * from place_order(%s,%s,%s,%s,%s,%s)", [CUR[0], name, email, phone, notes, js])
+    return attempt(conn or anon, "select * from place_order(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", [CUR[0], name, email, phone, notes, js, a1, a2, town, pc])
 line = lambda n, q: {"scent_id": str(ids[n]), "quantity": q}
 n_orders = lambda: su.execute("select count(*) from orders").fetchone()[0]
 
@@ -167,9 +167,9 @@ check("admin sees orders", len(attempt(admin, "select * from orders")[1]) > 5)
 
 print("\n== 9. Monthly offers (November > December)")
 setstock(A, 100); setstock(B, 100); setstock(C, 0); setstock(D, 100)
-check("non-admin cannot create offers", attempt(other, "select save_offer(null,'Hack',10,2000,5,%s,true)", [[ids[A]]])[1] == "not_authorised")
-check("visitor cannot create offers", attempt(anon, "select save_offer(null,'Hack',10,2000,5,%s,true)", [[ids[A]]])[0] == "err")
-res = attempt(admin, "select save_offer(null,'December Selection Box',10,2200,5,%s,false)", [[ids[A], ids[C], ids[D]]]); DEC = res[1][0][0]; CUR[0] = DEC
+check("non-admin cannot create offers", attempt(other, "select save_offer(null,'Hack',10,2000,5,%s,true,null)", [[ids[A]]])[1] == "not_authorised")
+check("visitor cannot create offers", attempt(anon, "select save_offer(null,'Hack',10,2000,5,%s,true,null)", [[ids[A]]])[0] == "err")
+res = attempt(admin, "select save_offer(null,'December Selection Box',10,2200,5,%s,false,'2026-12-10')", [[ids[A], ids[C], ids[D]]]); DEC = res[1][0][0]; CUR[0] = DEC
 check("admin can build next month's offer without switching it on", res[0] == "ok" and len(attempt(anon, "select * from public_offers")[1]) == 1)
 check("two live offers are impossible (database enforces it)", attempt(su, "update offers set active=true where id=%s", [DEC])[0] == "err")
 nov_orders = n_orders()
@@ -179,10 +179,26 @@ check("December list shows its in-stock scents only (C is at 0 so it's hidden)",
 check("scents not picked for December are not orderable", order([line(B, 10)])[1] == "scent_unavailable")
 check("old November orders are untouched", n_orders() == nov_orders and su.execute("select count(*) from orders where offer_id=%s", [OFFER]).fetchone()[0] > 0)
 res = order([line(A, 4), line(D, 6)]); check("ordering from December works at the December price", res[0] == "ok" and res[1][0][2] == 2200, res)
-res = attempt(admin, "select save_offer(%s,'December Selection Box',10,2200,5,%s,false)", [DEC, [ids[A]]])
+res = attempt(admin, "select save_offer(%s,'December Selection Box',10,2200,5,%s,false,'2026-12-10')", [DEC, [ids[A]]])
 check("editing the live offer's scent list removes scents from it", res[0] == "ok" and {r[0] for r in attempt(anon, "select name from public_offer_scents")[1]} == {A})
 check("ending an offer leaves no offer to order from", attempt(admin, "select set_offer_active(%s,false)", [DEC])[0] == "ok" and attempt(anon, "select * from public_offers")[1] == [] and order([line(A, 10)])[1] == "offer_unavailable")
-check("bad offer details rejected", all(attempt(admin, "select save_offer(null,%s,%s,%s,%s,'{}',false)", a)[0] == "err" for a in (["", 10, 2000, 5], ["x", 0, 2000, 5], ["x", 10, -1, 5], ["x", 10, 2000, 0])))
+check("bad offer details rejected", all(attempt(admin, "select save_offer(null,%s,%s,%s,%s,'{}',false,null)", a)[0] == "err" for a in (["", 10, 2000, 5], ["x", 0, 2000, 5], ["x", 10, -1, 5], ["x", 10, 2000, 0])))
+
+print("\n== 10. Delivery address and delivery date")
+check("offer view shows delivery date", attempt(admin, "select set_offer_active(%s,true)", [DEC])[0] == "ok" and str(attempt(anon, "select delivery_from from public_offers")[1][0][0]) == "2026-12-10")
+setstock(A, 700)
+res = order([line(A, 10)], a1="39 Rodney Drive", a2="Heaton Moor", town="Stockport", pc="sk4  1ab")
+check("order saves address and tidies the postcode", res[0] == "ok" and str(res[1][0][3]) == "2026-12-10", res)
+row = su.execute("select address_line1, address_line2, town, postcode, delivery_from from orders where ref=%s", [res[1][0][1]]).fetchone()
+check("stored address is correct", row[:4] == ("39 Rodney Drive", "Heaton Moor", "Stockport", "SK4 1AB") and str(row[4]) == "2026-12-10", row)
+before = n_orders(); s0 = stock()
+for label, kw in [("missing house/street", dict(a1="")), ("tiny address", dict(a1="1")), ("missing town", dict(town="")), ("bad postcode", dict(pc="HELLO")), ("empty postcode", dict(pc="")), ("long address", dict(a1="x" * 151))]:
+    r = order([line(A, 10)], **kw); check(f"rejected: {label}", r[0] == "err", r)
+check("rejected orders changed nothing", n_orders() == before and stock() == s0)
+check("postcodes of other shapes accepted", all(order([line(A, 10)], pc=p)[0] == "ok" for p in ("M1 1AE", "EC1A 1BB", "W1A0AX", "b338th")))
+check("offer with no delivery date still takes orders", attempt(admin, "select save_offer(%s,'December Selection Box',10,2200,5,%s,true,null)", [DEC, [ids[A]]])[0] == "ok" and order([line(A, 10)])[0] == "ok" and attempt(anon, "select delivery_from from public_offers")[1][0][0] is None)
+check("old 6-argument place_order is gone", attempt(anon, "select * from place_order(%s,'a','a@b.co','','',%s)", [CUR[0], Jsonb([line(A, 10)])])[0] == "err")
+check("visitors still cannot read order addresses", attempt(anon, "select address_line1 from orders")[0] == "err")
 
 print("\n== 8. The books always balance")
 bad_rows = su.execute("select s.name, s.stock_ml, coalesce(sum(m.delta_ml),0) from scents s left join inventory_movements m on m.scent_id=s.id group by s.id having s.stock_ml <> coalesce(sum(m.delta_ml),0) or s.stock_ml < 0").fetchall()

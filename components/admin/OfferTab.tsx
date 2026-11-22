@@ -1,9 +1,9 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { sb } from "@/lib/supabase";
-import { friendlyError, norm, pounds } from "@/lib/util";
+import { friendlyError, longDate, norm, pounds } from "@/lib/util";
 
-type Offer = { id: string; name: string; bars_per_box: number; price_pence: number; ml_per_bar: number; active: boolean };
+type Offer = { id: string; name: string; bars_per_box: number; price_pence: number; ml_per_bar: number; active: boolean; delivery_from: string | null };
 type Sc = { id: string; name: string; stock_ml: number; active: boolean };
 type Msg = { ok: boolean; text: string } | null;
 
@@ -13,13 +13,13 @@ export default function OfferTab() {
   const [scents, setScents] = useState<Sc[]>([]);
   const [msg, setMsg] = useState<Msg>(null);
   const [editing, setEditing] = useState<string | null>(null); // offer id, "new", or null
-  const [name, setName] = useState(""); const [price, setPrice] = useState("20"); const [bars, setBars] = useState("10"); const [ml, setMl] = useState("5");
+  const [name, setName] = useState(""); const [price, setPrice] = useState("20"); const [bars, setBars] = useState("10"); const [ml, setMl] = useState("5"); const [dlv, setDlv] = useState("");
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [q, setQ] = useState("");
 
   const load = useCallback(async () => {
     const [o, l, s] = await Promise.all([
-      sb.from("offers").select("id,name,bars_per_box,price_pence,ml_per_bar,active").order("created_at", { ascending: false }),
+      sb.from("offers").select("id,name,bars_per_box,price_pence,ml_per_bar,active,delivery_from").order("created_at", { ascending: false }),
       sb.from("offer_scents").select("offer_id,scent_id"),
       sb.from("scents").select("id,name,stock_ml,active").order("name"),
     ]);
@@ -30,8 +30,8 @@ export default function OfferTab() {
 
   function edit(o: Offer | null) {
     setMsg(null); setQ("");
-    if (!o) { setEditing("new"); setName(""); setPrice("20"); setBars("10"); setMl("5"); setSel(new Set()); }
-    else { setEditing(o.id); setName(o.name); setPrice(String(o.price_pence / 100)); setBars(String(o.bars_per_box)); setMl(String(o.ml_per_bar)); setSel(new Set(links.filter((l) => l.offer_id === o.id).map((l) => l.scent_id))); }
+    if (!o) { setEditing("new"); setName(""); setPrice("20"); setBars("10"); setMl("5"); setDlv(""); setSel(new Set()); }
+    else { setEditing(o.id); setName(o.name); setPrice(String(o.price_pence / 100)); setBars(String(o.bars_per_box)); setMl(String(o.ml_per_bar)); setDlv(o.delivery_from || ""); setSel(new Set(links.filter((l) => l.offer_id === o.id).map((l) => l.scent_id))); }
     setTimeout(() => document.getElementById("offer-form")?.scrollIntoView({ behavior: "smooth" }), 50);
   }
   async function save(activate: boolean) {
@@ -39,7 +39,7 @@ export default function OfferTab() {
     if (!name.trim()) return setMsg({ ok: false, text: "Give the offer a name." });
     if (!(p >= 0) || !(b >= 1) || !(m >= 1)) return setMsg({ ok: false, text: "Check the price, number of bars and ml per bar." });
     if (activate && sel.size === 0) return setMsg({ ok: false, text: "Pick at least one scent before making it live." });
-    const { error } = await sb.rpc("save_offer", { p_offer_id: editing === "new" ? null : editing, p_name: name, p_bars: b, p_price_pence: p, p_ml_per_bar: m, p_scent_ids: [...sel], p_activate: activate });
+    const { error } = await sb.rpc("save_offer", { p_offer_id: editing === "new" ? null : editing, p_name: name, p_bars: b, p_price_pence: p, p_ml_per_bar: m, p_scent_ids: [...sel], p_activate: activate, p_delivery_from: dlv || null });
     if (error) return setMsg({ ok: false, text: friendlyError(error) });
     setMsg({ ok: true, text: activate ? `${name.trim()} is now live on the website.` : `${name.trim()} saved.` }); setEditing(null); load();
   }
@@ -68,7 +68,7 @@ export default function OfferTab() {
           return (
             <div className="item" key={o.id}><div className="head" style={{ cursor: "default", flexWrap: "wrap" }}>
               <span><b style={{ fontFamily: "var(--serif)", fontSize: 20, fontWeight: 400 }}>{o.name}</b> {o.active && <span className="pill completed">live</span>}<br />
-                <span className="muted" style={{ fontSize: 13 }}>{pounds(o.price_pence)} for {o.bars_per_box} bars · {o.ml_per_bar} ml per bar · {ids.length} scents{o.active ? ` (${available} still available)` : ""}</span></span>
+                <span className="muted" style={{ fontSize: 13 }}>{pounds(o.price_pence)} for {o.bars_per_box} bars · {o.ml_per_bar} ml per bar · {o.delivery_from ? `delivery from ${longDate(o.delivery_from)} · ` : "no delivery date · "}{ids.length} scents{o.active ? ` (${available} still available)` : ""}</span></span>
               <span style={{ display: "flex", gap: 8 }}>
                 <button className="btn small" onClick={() => edit(o)}>Edit</button>
                 {o.active ? <button className="btn small danger" onClick={() => setActive(o, false)}>End offer</button> : <button className="btn small primary" onClick={() => setActive(o, true)}>Make live</button>}
@@ -87,6 +87,7 @@ export default function OfferTab() {
             <div className="field"><label>Bars per box</label><input type="number" inputMode="numeric" min="1" value={bars} onChange={(e) => setBars(e.target.value)} /></div>
             <div className="field"><label>Oil per bar (ml)</label><input type="number" inputMode="numeric" min="1" value={ml} onChange={(e) => setMl(e.target.value)} /></div>
           </div>
+          <div className="field"><label>Delivery will be from (optional)</label><input type="date" value={dlv} onChange={(e) => setDlv(e.target.value)} /><p className="muted" style={{ fontSize: 13, margin: "6px 0 0" }}>Customers see “Delivery will be from …” on the order form. Leave blank to hide it. You can change it any time; orders already placed keep the date they saw.</p></div>
           <span className="label">Scents in this offer ({sel.size} picked)</span>
           <div className="row" style={{ margin: "8px 0", alignItems: "center" }}>
             <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search scents…" aria-label="Search scents" />

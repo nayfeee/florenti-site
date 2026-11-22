@@ -125,3 +125,6 @@ textarea{min-height:84px;resize:vertical}
 .pickrow input{width:20px;height:20px;flex:none}
 .pickrow .n{flex:1}.pickrow .ml{color:var(--muted);font-size:14px}
 .scroll{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:4px 12px}
+
+.delivery{margin:10px 0 0;font-weight:600;letter-spacing:.02em}
+.offer-head .delivery{text-align:center}

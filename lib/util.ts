@@ -40,3 +40,17 @@ export function downloadCsv(filename: string, rows: (string | number | boolean |
   a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// "2026-12-10" -> "Thursday 10 December 2026"
+export function longDate(d?: string | null): string {
+  if (!d) return "";
+  const dt = new Date(d + "T12:00:00Z");
+  if (isNaN(dt.getTime())) return "";
+  return dt.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).replace(",", "");
+}
+// "2026-12-10" -> "10 Dec 2026"
+export function shortDate(d?: string | null): string {
+  if (!d) return "";
+  const dt = new Date(d + "T12:00:00Z");
+  return isNaN(dt.getTime()) ? "" : dt.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+}

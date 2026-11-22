@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { TAGS, WHATSAPP, norm, pounds, waLink } from "@/lib/util";
+import { TAGS, WHATSAPP, longDate, norm, pounds, waLink } from "@/lib/util";
 
 export type OfferScent = { scent_id: string; name: string; inspired_by: string; description: string; tags: string[]; max_bars: number };
-export type Offer = { id: string; name: string; bars_per_box: number; price_pence: number };
+export type Offer = { id: string; name: string; bars_per_box: number; price_pence: number; delivery_from?: string | null };
 
 export default function OfferBuilder({ offer, scents }: { offer: Offer; scents: OfferScent[] }) {
   const router = useRouter();
@@ -15,11 +15,16 @@ export default function OfferBuilder({ offer, scents }: { offer: Offer; scents: 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [address1, setAddress1] = useState("");
+  const [address2, setAddress2] = useState("");
+  const [town, setTown] = useState("");
+  const [postcode, setPostcode] = useState("");
+  const [pcWarn, setPcWarn] = useState("");
   const [notes, setNotes] = useState("");
   const [website, setWebsite] = useState(""); // honeypot: real people never fill this in
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [done, setDone] = useState<{ ref: string; name: string; lines: { name: string; qty: number }[] } | null>(null);
+  const [done, setDone] = useState<{ ref: string; name: string; deliveryFrom: string | null; lines: { name: string; qty: number }[] } | null>(null);
 
   const total = Object.values(qty).reduce((a, b) => a + b, 0);
   const byId = useMemo(() => Object.fromEntries(scents.map((s) => [s.scent_id, s])), [scents]);
@@ -47,7 +52,21 @@ export default function OfferBuilder({ offer, scents }: { offer: Offer; scents: 
   const presentTags = TAGS.filter((t) => scents.some((s) => s.tags.includes(t)));
   const chosen = scents.filter((s) => qty[s.scent_id] > 0);
   const hasContact = email.includes("@") || phone.replace(/\D/g, "").length >= 7;
-  const canSubmit = total === bars && name.trim().length >= 2 && hasContact && !busy;
+  const pcShape = /^[A-Za-z]{1,2}[0-9][A-Za-z0-9]?\s*[0-9][A-Za-z]{2}$/.test(postcode.trim());
+  const canSubmit = total === bars && name.trim().length >= 2 && hasContact && address1.trim().length >= 3 && town.trim().length >= 2 && pcShape && !busy;
+
+  // Friendly, optional check against the free postcodes.io service. It never blocks an order and stays quiet if the service is down.
+  async function checkPostcode() {
+    setPcWarn("");
+    const p = postcode.replace(/\s+/g, "");
+    if (!pcShape) { if (p) setPcWarn("That doesn’t look like a UK postcode. Please check it."); return; }
+    try {
+      const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 4000);
+      const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(p)}/validate`, { signal: ctrl.signal }); clearTimeout(t);
+      const j = await r.json();
+      if (j?.result === false) setPcWarn("We couldn’t find that postcode. Please double-check it (you can still place your order).");
+    } catch { /* service unavailable: say nothing */ }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -55,10 +74,10 @@ export default function OfferBuilder({ offer, scents }: { offer: Offer; scents: 
     setBusy(true); setError("");
     const items = Object.entries(qty).filter(([, v]) => v > 0).map(([id, v]) => ({ scent_id: id, quantity: v }));
     try {
-      const res = await fetch("/api/order", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ offerId: offer.id, items, name, email, phone, notes, website }) });
+      const res = await fetch("/api/order", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ offerId: offer.id, items, name, email, phone, notes, website, address1, address2, town, postcode }) });
       const j = await res.json();
       if (j.ok) {
-        setDone({ ref: j.ref, name: name.trim(), lines: chosen.map((s) => ({ name: s.name, qty: qty[s.scent_id] })) });
+        setDone({ ref: j.ref, name: name.trim(), deliveryFrom: j.deliveryFrom ?? null, lines: chosen.map((s) => ({ name: s.name, qty: qty[s.scent_id] })) });
         window.scrollTo({ top: 0, behavior: "smooth" });
       } else {
         setError(j.message || "Something went wrong. Please try again.");
@@ -70,12 +89,13 @@ export default function OfferBuilder({ offer, scents }: { offer: Offer; scents: 
   }
 
   if (done) {
-    const msg = `Hi Florenti! I’ve just placed order ${done.ref} on the website.\n\n${done.lines.map((l) => `${l.qty} x ${l.name}`).join("\n")}\n\nName: ${done.name}`;
+    const msg = `Hi Florenti! I’ve just placed order ${done.ref} on the website.\n\n${done.lines.map((l) => `${l.qty} x ${l.name}`).join("\n")}${done.deliveryFrom ? `\n\nDelivery from ${longDate(done.deliveryFrom)}` : ""}\n\nName: ${done.name}`;
     return (
       <div className="panel narrow" style={{ margin: "20px auto" }}>
         <p className="lead">Thank you, {done.name.split(" ")[0]}</p>
         <p className="ref">{done.ref}</p>
         <p className="muted" style={{ textAlign: "center", marginTop: 0 }}>Your order has been received. Keep this reference number handy. We’ll be in touch shortly to confirm everything and arrange payment.</p>
+        {done.deliveryFrom && <p className="muted" style={{ textAlign: "center", fontWeight: 600 }}>Delivery will be from {longDate(done.deliveryFrom)}</p>}
         <ul className="sum" style={{ margin: "18px 0" }}>
           {done.lines.map((l) => <li key={l.name}><span>{l.name}</span><span>× {l.qty}</span></li>)}
         </ul>
@@ -92,6 +112,7 @@ export default function OfferBuilder({ offer, scents }: { offer: Offer; scents: 
       <div className="offer-head">
         <h2>{offer.name}</h2>
         <p>{pounds(offer.price_pence)} for {bars} snap bars. Mix and match any scents below, and pick the same one more than once if you love it.</p>
+        {offer.delivery_from && <p className="delivery">Delivery will be from {longDate(offer.delivery_from)}</p>}
       </div>
       <input className="search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search this month’s scents…" aria-label="Search scents" autoComplete="off" />
       {presentTags.length > 1 && (
@@ -140,6 +161,15 @@ export default function OfferBuilder({ offer, scents }: { offer: Offer; scents: 
           <div className="field"><label htmlFor="p">Phone / WhatsApp</label><input id="p" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" maxLength={40} /></div>
         </div>
         <p className="muted" style={{ marginTop: -6, fontSize: 14 }}>Please give an email, a phone number, or both, so we can reach you.</p>
+        <h2 className="section">Delivery address</h2>
+        <div className="field"><label htmlFor="a1">House number and street</label><input id="a1" type="text" value={address1} onChange={(e) => setAddress1(e.target.value)} autoComplete="address-line1" maxLength={150} placeholder="e.g. 39 Rodney Drive" required /></div>
+        <div className="field"><label htmlFor="a2">Flat, area or extra line (optional)</label><input id="a2" type="text" value={address2} onChange={(e) => setAddress2(e.target.value)} autoComplete="address-line2" maxLength={150} /></div>
+        <div className="row">
+          <div className="field"><label htmlFor="t">Town or city</label><input id="t" type="text" value={town} onChange={(e) => setTown(e.target.value)} autoComplete="address-level2" maxLength={80} required /></div>
+          <div className="field"><label htmlFor="pc">Postcode</label><input id="pc" type="text" value={postcode} onChange={(e) => { setPostcode(e.target.value); setPcWarn(""); }} onBlur={checkPostcode} autoComplete="postal-code" maxLength={10} required style={{ textTransform: "uppercase" }} /></div>
+        </div>
+        {pcWarn && <p className="muted" role="status" style={{ marginTop: -6, fontSize: 14, color: "#f3d9a4" }}>{pcWarn}</p>}
+        {offer.delivery_from && <p className="delivery">Delivery will be from {longDate(offer.delivery_from)}</p>}
         <div className="field"><label htmlFor="o">Notes (optional)</label><textarea id="o" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={1000} placeholder="Anything we should know?" /></div>
         <div className="hp" aria-hidden="true"><label>Website<input type="text" tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} /></label></div>
         {error && <div className="notice err" role="alert">{error}</div>}
